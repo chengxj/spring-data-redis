@@ -35,10 +35,11 @@ import com.lambdaworks.redis.ZAddArgs;
 import com.lambdaworks.redis.ZStoreArgs;
 
 import reactor.core.publisher.Flux;
-import rx.Observable;
+import reactor.core.publisher.Mono;
 
 /**
  * @author Christoph Strobl
+ * @author Mark Paluch
  * @since 2.0
  */
 public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
@@ -71,7 +72,8 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			ZAddArgs args = null;
 
-			if (command.getIncr().isPresent() || command.getUpsert().isPresent() || command.getReturnTotalChanged().isPresent()) {
+			if (command.getIncr().isPresent() || command.getUpsert().isPresent()
+					|| command.getReturnTotalChanged().isPresent()) {
 
 				if (command.getIncr().isPresent() && ObjectUtils.nullSafeEquals(command.getIncr().get(), Boolean.TRUE)) {
 
@@ -81,12 +83,12 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 					Tuple tuple = command.getTuples().iterator().next();
 
-					return LettuceReactiveRedisConnection.<Double> monoConverter()
-							.convert(cmd.zaddincr(command.getKey().array(), tuple.getScore(), tuple.getValue()))
+					return cmd.zaddincr(command.getKey(), tuple.getScore(), ByteBuffer.wrap(tuple.getValue()))
 							.map(value -> new NumericResponse<>(command, value));
 				}
 
-				if (command.getReturnTotalChanged().isPresent() && ObjectUtils.nullSafeEquals(command.getReturnTotalChanged().get(), Boolean.TRUE)) {
+				if (command.getReturnTotalChanged().isPresent()
+						&& ObjectUtils.nullSafeEquals(command.getReturnTotalChanged().get(), Boolean.TRUE)) {
 					args = ZAddArgs.Builder.ch();
 				}
 
@@ -100,15 +102,13 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 				}
 			}
 
-			ScoredValue<byte[]>[] values = (ScoredValue<byte[]>[]) command.getTuples().stream()
-					.map(tuple -> new ScoredValue<byte[]>(tuple.getScore(), tuple.getValue()))
-					.toArray(size -> new ScoredValue[size]);
+			ScoredValue<ByteBuffer>[] values = (ScoredValue<ByteBuffer>[]) command.getTuples().stream()
+					.map(tuple -> ScoredValue.fromNullable(tuple.getScore(), ByteBuffer.wrap(tuple.getValue())))
+					.toArray(ScoredValue[]::new);
 
-			Observable<Long> result = args == null ? cmd.zadd(command.getKey().array(), values)
-					: cmd.zadd(command.getKey().array(), args, values);
+			Mono<Long> result = args == null ? cmd.zadd(command.getKey(), values) : cmd.zadd(command.getKey(), args, values);
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -124,9 +124,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notEmpty(command.getValues(), "Values must not be null or empty!");
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter()
-					.convert(cmd.zrem(command.getKey().array(),
-							command.getValues().stream().map(ByteBuffer::array).toArray(size -> new byte[size][])))
+			return cmd.zrem(command.getKey(), command.getValues().stream().toArray(ByteBuffer[]::new))
 					.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
@@ -144,9 +142,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getValue(), "Member must not be null!");
 			Assert.notNull(command.getIncrement(), "Increment value must not be null!");
 
-			return LettuceReactiveRedisConnection.<Double> monoConverter()
-					.convert(
-							cmd.zincrby(command.getKey().array(), command.getIncrement().doubleValue(), command.getValue().array()))
+			return cmd.zincrby(command.getKey(), command.getIncrement().doubleValue(), command.getValue())
 					.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
@@ -163,12 +159,10 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getValue(), "Value must not be null!");
 
-			Observable<Long> result = ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)
-					? cmd.zrank(command.getKey().array(), command.getValue().array())
-					: cmd.zrevrank(command.getKey().array(), command.getValue().array());
+			Mono<Long> result = ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)
+					? cmd.zrank(command.getKey(), command.getValue()) : cmd.zrevrank(command.getKey(), command.getValue());
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -184,34 +178,37 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Observable<List<Tuple>> result = Observable.empty();
+			Mono<List<Tuple>> result;
 
 			if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-				if (command.getWithScores().isPresent() && ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
-
-					result = cmd.zrangeWithScores(command.getKey().array(), command.getRange().getLowerBound(),
-							command.getRange().getUpperBound()).map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
-				} else {
+				if (command.getWithScores().isPresent()
+						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
 
 					result = cmd
-							.zrange(command.getKey().array(), command.getRange().getLowerBound(), command.getRange().getUpperBound())
-							.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+							.zrangeWithScores(command.getKey(), command.getRange().getLowerBound(),
+									command.getRange().getUpperBound())
+							.map(sc -> (Tuple) new DefaultTuple(getBytes(sc), sc.getScore())).collectList();
+				} else {
+
+					result = cmd.zrange(command.getKey(), command.getRange().getLowerBound(), command.getRange().getUpperBound())
+							.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 				}
 			} else {
-				if (command.getWithScores().isPresent() && ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
-					result = cmd.zrevrangeWithScores(command.getKey().array(), command.getRange().getLowerBound(),
-							command.getRange().getUpperBound()).map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
+				if (command.getWithScores().isPresent()
+						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
+					result = cmd
+							.zrevrangeWithScores(command.getKey(), command.getRange().getLowerBound(),
+									command.getRange().getUpperBound())
+							.map(sc -> (Tuple) new DefaultTuple(getBytes(sc), sc.getScore())).collectList();
 				} else {
 
 					result = cmd
-							.zrevrange(command.getKey().array(), command.getRange().getLowerBound(),
-									command.getRange().getUpperBound())
-							.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+							.zrevrange(command.getKey(), command.getRange().getLowerBound(), command.getRange().getUpperBound())
+							.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 				}
 			}
 
-			return LettuceReactiveRedisConnection.<List<Tuple>> monoConverter().convert(result)
-					.map(value -> new MultiValueResponse<>(command, value));
+			return result.map(value -> new MultiValueResponse<>(command, value));
 		}));
 	}
 
@@ -234,79 +231,80 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			boolean isLimited = command.getLimit().isPresent();
 
-			Observable<List<Tuple>> result = Observable.empty();
+			Mono<List<Tuple>> result;
 
 			if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-				if (command.getWithScores().isPresent() && ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
+				if (command.getWithScores().isPresent()
+						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
 
 					if (!isLimited) {
 						result = (requiresStringConversion
-								? cmd.zrangebyscoreWithScores(command.getKey().array(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrangebyscoreWithScores(command.getKey().array(), (Double) lowerBound, (Double) upperBound))
-										.map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
+								? cmd.zrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString())
+								: cmd.zrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound))
+										.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					} else {
 						result = (requiresStringConversion
-								? cmd.zrangebyscoreWithScores(command.getKey().array(), lowerBound.toString(), upperBound.toString(),
+								? cmd.zrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString(),
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrangebyscoreWithScores(command.getKey().array(), (Double) lowerBound, (Double) upperBound,
+								: cmd.zrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound,
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
+												.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
 
 					if (!isLimited) {
 						result = (requiresStringConversion
-								? cmd.zrangebyscore(command.getKey().array(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrangebyscore(command.getKey().array(), (Double) lowerBound, (Double) upperBound))
-										.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+								? cmd.zrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
+								: cmd.zrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound))
+										.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					} else {
 
 						result = (requiresStringConversion
-								? cmd.zrangebyscore(command.getKey().array(), lowerBound.toString(), upperBound.toString(),
+								? cmd.zrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString(),
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrangebyscore(command.getKey().array(), (Double) lowerBound, (Double) upperBound,
+								: cmd.zrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound,
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+												.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
 			} else {
-				if (command.getWithScores().isPresent() && ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
+				if (command.getWithScores().isPresent()
+						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
 
 					if (!isLimited) {
 						result = (requiresStringConversion
-								? cmd.zrevrangebyscoreWithScores(command.getKey().array(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrevrangebyscoreWithScores(command.getKey().array(), (Double) lowerBound, (Double) upperBound))
-										.map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
+								? cmd.zrevrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString())
+								: cmd.zrevrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound))
+										.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					} else {
 
 						result = (requiresStringConversion
-								? cmd.zrevrangebyscoreWithScores(command.getKey().array(), lowerBound.toString(), upperBound.toString(),
+								? cmd.zrevrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString(),
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrevrangebyscoreWithScores(command.getKey().array(), (Double) lowerBound, (Double) upperBound,
+								: cmd.zrevrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound,
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(sc -> (Tuple) new DefaultTuple(sc.value, sc.score)).toList();
+												.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
 
 					if (!isLimited) {
 						result = (requiresStringConversion
-								? cmd.zrevrangebyscore(command.getKey().array(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrevrangebyscore(command.getKey().array(), (Double) lowerBound, (Double) upperBound))
-										.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+								? cmd.zrevrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
+								: cmd.zrevrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound))
+										.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					} else {
 
 						result = (requiresStringConversion
-								? cmd.zrevrangebyscore(command.getKey().array(), lowerBound.toString(), upperBound.toString(),
+								? cmd.zrevrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString(),
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrevrangebyscore(command.getKey().array(), (Double) lowerBound, (Double) upperBound,
+								: cmd.zrevrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound,
 										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(value -> (Tuple) new DefaultTuple(value, Double.NaN)).toList();
+												.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
 			}
 
-			return LettuceReactiveRedisConnection.<List<Tuple>> monoConverter().convert(result)
-					.map(value -> new MultiValueResponse<>(command, value));
+			return result.map(value -> new MultiValueResponse<>(command, value));
 		}));
 	}
 
@@ -325,16 +323,15 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Object lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange());
 			Object upperBound = AgrumentConverters.upperBoundArgOf(command.getRange());
 
-			Observable<Long> result = Observable.empty();
+			Mono<Long> result;
 
 			if (lowerBound instanceof String || upperBound instanceof String) {
-				result = cmd.zcount(command.getKey().array(), lowerBound.toString(), upperBound.toString());
+				result = cmd.zcount(command.getKey(), lowerBound.toString(), upperBound.toString());
 			} else {
-				result = cmd.zcount(command.getKey().array(), (Double) lowerBound, (Double) upperBound);
+				result = cmd.zcount(command.getKey(), (Double) lowerBound, (Double) upperBound);
 			}
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -349,8 +346,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			Assert.notNull(command.getKey(), "Key must not be null!");
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(cmd.zcard(command.getKey().array()))
-					.map(value -> new NumericResponse<>(command, value));
+			return cmd.zcard(command.getKey()).map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -366,9 +362,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getValue(), "Value must not be null!");
 
-			return LettuceReactiveRedisConnection.<Double> monoConverter()
-					.convert(cmd.zscore(command.getKey().array(), command.getValue().array()))
-					.map(value -> new NumericResponse<>(command, value));
+			return cmd.zscore(command.getKey(), command.getValue()).map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -385,9 +379,8 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			return LettuceReactiveRedisConnection
-					.<Long> monoConverter().convert(cmd.zremrangebyrank(command.getKey().array(),
-							command.getRange().getLowerBound(), command.getRange().getUpperBound()))
+			return cmd
+					.zremrangebyrank(command.getKey(), command.getRange().getLowerBound(), command.getRange().getUpperBound())
 					.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
@@ -408,12 +401,11 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Object lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange());
 			Object upperBound = AgrumentConverters.upperBoundArgOf(command.getRange());
 
-			Observable<Long> result = (lowerBound instanceof String || upperBound instanceof String)
-					? cmd.zremrangebyscore(command.getKey().array(), lowerBound.toString(), upperBound.toString())
-					: cmd.zremrangebyscore(command.getKey().array(), (Double) lowerBound, (Double) upperBound);
+			Mono<Long> result = (lowerBound instanceof String || upperBound instanceof String)
+					? cmd.zremrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
+					: cmd.zremrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound);
 
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -431,14 +423,14 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			ZStoreArgs args = null;
 			if (command.getAggregateFunction().isPresent() || !command.getWeights().isEmpty()) {
-				args = zStoreArgs(command.getAggregateFunction().isPresent() ? command.getAggregateFunction().get() : null, command.getWeights());
+				args = zStoreArgs(command.getAggregateFunction().isPresent() ? command.getAggregateFunction().get() : null,
+						command.getWeights());
 			}
 
-			byte[][] sourceKeys = command.getSourceKeys().stream().map(ByteBuffer::array).toArray(size -> new byte[size][]);
-			Observable<Long> result = args != null ? cmd.zunionstore(command.getKey().array(), args, sourceKeys)
-					: cmd.zunionstore(command.getKey().array(), sourceKeys);
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			ByteBuffer[] sourceKeys = command.getSourceKeys().stream().toArray(ByteBuffer[]::new);
+			Mono<Long> result = args != null ? cmd.zunionstore(command.getKey(), args, sourceKeys)
+					: cmd.zunionstore(command.getKey(), sourceKeys);
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -456,14 +448,14 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			ZStoreArgs args = null;
 			if (command.getAggregateFunction().isPresent() || !command.getWeights().isEmpty()) {
-				args = zStoreArgs(command.getAggregateFunction().isPresent() ? command.getAggregateFunction().get() : null, command.getWeights());
+				args = zStoreArgs(command.getAggregateFunction().isPresent() ? command.getAggregateFunction().get() : null,
+						command.getWeights());
 			}
 
-			byte[][] sourceKeys = command.getSourceKeys().stream().map(ByteBuffer::array).toArray(size -> new byte[size][]);
-			Observable<Long> result = args != null ? cmd.zinterstore(command.getKey().array(), args, sourceKeys)
-					: cmd.zinterstore(command.getKey().array(), sourceKeys);
-			return LettuceReactiveRedisConnection.<Long> monoConverter().convert(result)
-					.map(value -> new NumericResponse<>(command, value));
+			ByteBuffer[] sourceKeys = command.getSourceKeys().stream().toArray(ByteBuffer[]::new);
+			Mono<Long> result = args != null ? cmd.zinterstore(command.getKey(), args, sourceKeys)
+					: cmd.zinterstore(command.getKey(), sourceKeys);
+			return result.map(value -> new NumericResponse<>(command, value));
 		}));
 	}
 
@@ -478,7 +470,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			Assert.notNull(command.getKey(), "Destination key must not be null!");
 
-			Observable<byte[]> result = Observable.empty();
+			Flux<ByteBuffer> result;
 
 			String lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange()).toString();
 			String upperBound = AgrumentConverters.upperBoundArgOf(command.getRange()).toString();
@@ -486,7 +478,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			if (command.getLimit() != null) {
 
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey().array(), lowerBound, upperBound, command.getLimit().getOffset(),
+					result = cmd.zrangebylex(command.getKey(), lowerBound, upperBound, command.getLimit().getOffset(),
 							command.getLimit().getCount());
 				} else {
 
@@ -495,7 +487,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 				}
 			} else {
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey().array(), lowerBound, upperBound);
+					result = cmd.zrangebylex(command.getKey(), lowerBound, upperBound);
 				} else {
 
 					// TODO: fix when https://github.com/mp911de/lettuce/issues/369 resolved
@@ -503,8 +495,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 				}
 			}
 
-			return LettuceReactiveRedisConnection.<List<ByteBuffer>> monoConverter()
-					.convert(result.map(ByteBuffer::wrap).toList()).map(value -> new MultiValueResponse<>(command, value));
+			return result.collectList().map(value -> new MultiValueResponse<>(command, value));
 		}));
 	}
 
@@ -534,6 +525,17 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			args.weights(lg);
 		}
 		return args;
+	}
+
+	private static byte[] getBytes(ScoredValue<ByteBuffer> scoredValue) {
+		return scoredValue.optional().map(LettuceReactiveZSetCommands::getBytes).orElse(new byte[0]);
+	}
+
+	private static byte[] getBytes(ByteBuffer byteBuffer) {
+
+		byte[] bytes = new byte[byteBuffer.remaining()];
+		byteBuffer.get(bytes);
+		return bytes;
 	}
 
 	protected LettuceReactiveRedisConnection getConnection() {
