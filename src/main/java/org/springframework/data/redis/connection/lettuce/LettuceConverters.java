@@ -16,21 +16,10 @@
 package org.springframework.data.redis.connection.lettuce;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import com.lambdaworks.redis.*;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.geo.Distance;
@@ -70,6 +59,7 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
+import com.lambdaworks.redis.*;
 import com.lambdaworks.redis.cluster.models.partitions.Partitions;
 import com.lambdaworks.redis.cluster.models.partitions.RedisClusterNode.NodeFlag;
 import com.lambdaworks.redis.protocol.LettuceCharsets;
@@ -557,12 +547,77 @@ abstract public class LettuceConverters extends Converters {
 
 	/**
 	 * Convert a {@link org.springframework.data.redis.connection.RedisZSetCommands.Limit} to a lettuce {@link com.lambdaworks.redis.Limit}.
+	 *
 	 * @param limit
 	 * @return a lettuce {@link com.lambdaworks.redis.Limit}.
 	 * @since 2.0
 	 */
 	public static com.lambdaworks.redis.Limit toLimit(RedisZSetCommands.Limit limit){
 		return Limit.create(limit.getOffset(), limit.getCount());
+	}
+
+	/**
+	 * Convert a {@link org.springframework.data.redis.connection.RedisZSetCommands.Range} to a lettuce {@link Range}.
+	 *
+	 * @param range
+	 * @return
+	 * @since 2.0
+	 */
+	public static <T> Range<T> toRange(org.springframework.data.redis.connection.RedisZSetCommands.Range range) {
+			return Range.from(lowerBoundaryOf(range), upperBoundaryOf(range));
+	}
+
+	/**
+	 * Convert a {@link org.springframework.data.redis.connection.RedisZSetCommands.Range} to a lettuce {@link Range} and
+	 * reverse boundaries.
+	 *
+	 * @param range
+	 * @return
+	 * @since 2.0
+	 */
+	public static <T> Range<T> toRevRange(org.springframework.data.redis.connection.RedisZSetCommands.Range range) {
+		return Range.from(upperBoundaryOf(range), lowerBoundaryOf(range));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T> Range.Boundary<T> lowerBoundaryOf(org.springframework.data.redis.connection.RedisZSetCommands.Range range) {
+		return (Range.Boundary<T>) rangeToBoundaryArgumentConverter(false).convert(range);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T> Range.Boundary<T> upperBoundaryOf(org.springframework.data.redis.connection.RedisZSetCommands.Range range) {
+		return (Range.Boundary<T>) rangeToBoundaryArgumentConverter(true).convert(range);
+	}
+
+	private static Converter<org.springframework.data.redis.connection.RedisZSetCommands.Range, Range.Boundary<?>> rangeToBoundaryArgumentConverter(
+			boolean upper) {
+
+		return (source) -> {
+
+			Boundary sourceBoundary = upper ? source.getMax() : source.getMin();
+			if (sourceBoundary == null || sourceBoundary.getValue() == null) {
+				return Range.Boundary.unbounded();
+			}
+
+			boolean inclusive = sourceBoundary.isIncluding();
+			Object value = sourceBoundary.getValue();
+
+			if (value instanceof Number) {
+				return inclusive ? Range.Boundary.including((Number) value) : Range.Boundary.excluding((Number) value);
+			}
+
+			if (value instanceof String) {
+
+				if (!StringUtils.hasText((String) value) || ObjectUtils.nullSafeEquals(value, "+")
+						|| ObjectUtils.nullSafeEquals(value, "-")) {
+					return Range.Boundary.unbounded();
+				}
+				return inclusive ? Range.Boundary.including(value.toString().getBytes(LettuceCharsets.UTF8))
+						: Range.Boundary.excluding(value.toString().getBytes(LettuceCharsets.UTF8));
+			}
+
+			return inclusive ? Range.Boundary.including((byte[]) value) : Range.Boundary.excluding((byte[]) value);
+		};
 	}
 
 	/**

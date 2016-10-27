@@ -813,10 +813,11 @@ public class LettuceConnection extends AbstractRedisConnection {
 			if (isPipelined()) {
 				RedisFuture<TransactionResult> exec = ((RedisAsyncCommands) getAsyncDedicatedConnection()).exec();
 
-				LettuceTransactionResultConverter resultConverter = new LettuceTransactionResultConverter(new LinkedList<FutureResult<?>>(txResults),
-						LettuceConverters.exceptionConverter());
+				LettuceTransactionResultConverter resultConverter = new LettuceTransactionResultConverter(
+						new LinkedList<FutureResult<?>>(txResults), LettuceConverters.exceptionConverter());
 
-				pipeline(new LettuceResult(exec, source -> resultConverter.convert(LettuceConverters.transactionResultUnwrapper().convert(source))));
+				pipeline(new LettuceResult(exec,
+						source -> resultConverter.convert(LettuceConverters.transactionResultUnwrapper().convert(source))));
 				return null;
 			}
 
@@ -1333,8 +1334,8 @@ public class LettuceConnection extends AbstractRedisConnection {
 				transaction(new LettuceTxResult(getConnection().mget(keys), LettuceConverters.keyValueListUnwrapper()));
 				return null;
 			}
-			
-			return LettuceConverters.<byte[], byte[]>keyValueListUnwrapper().convert(getConnection().mget(keys));
+
+			return LettuceConverters.<byte[], byte[]> keyValueListUnwrapper().convert(getConnection().mget(keys));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2229,19 +2230,16 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZCOUNT must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
-				pipeline(new LettuceResult(getAsyncConnection().zcount(key, min, max)));
+				pipeline(new LettuceResult(getAsyncConnection().zcount(key, LettuceConverters.toRange(range))));
 				return null;
 			}
 			if (isQueueing()) {
-				transaction(new LettuceTxResult(getConnection().zcount(key, min, max)));
+				transaction(new LettuceTxResult(getConnection().zcount(key, LettuceConverters.toRange(range))));
 				return null;
 			}
-			return getConnection().zcount(key, min, max);
+			return getConnection().zcount(key, LettuceConverters.toRange(range));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2348,37 +2346,33 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZRANGEBYSCORE must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
 				if (limit != null) {
-					pipeline(
-							new LettuceResult(getAsyncConnection().zrangebyscore(key, min, max, limit.getOffset(), limit.getCount()),
-									LettuceConverters.bytesListToBytesSet()));
+					pipeline(new LettuceResult(getAsyncConnection().zrangebyscore(key, LettuceConverters.toRange(range),
+							LettuceConverters.toLimit(limit)), LettuceConverters.bytesListToBytesSet()));
 				} else {
-					pipeline(new LettuceResult(getAsyncConnection().zrangebyscore(key, min, max),
+					pipeline(new LettuceResult(getAsyncConnection().zrangebyscore(key, LettuceConverters.toRange(range)),
 							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 			if (isQueueing()) {
 				if (limit != null) {
-					transaction(
-							new LettuceTxResult(getConnection().zrangebyscore(key, min, max, limit.getOffset(), limit.getCount()),
-									LettuceConverters.bytesListToBytesSet()));
+					transaction(new LettuceTxResult(
+							getConnection().zrangebyscore(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)),
+							LettuceConverters.bytesListToBytesSet()));
 				} else {
-					transaction(new LettuceTxResult(getConnection().zrangebyscore(key, min, max),
+					transaction(new LettuceTxResult(getConnection().zrangebyscore(key, LettuceConverters.toRange(range)),
 							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 			if (limit != null) {
-				return LettuceConverters
-						.toBytesSet(getConnection().zrangebyscore(key, min, max, limit.getOffset(), limit.getCount()));
+				return LettuceConverters.toBytesSet(
+						getConnection().zrangebyscore(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)));
 			}
-			return LettuceConverters.toBytesSet(getConnection().zrangebyscore(key, min, max));
+			return LettuceConverters.toBytesSet(getConnection().zrangebyscore(key, LettuceConverters.toRange(range)));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2399,37 +2393,35 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZRANGEBYSCOREWITHSCORES must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
 				if (limit != null) {
-					pipeline(new LettuceResult(
-							getAsyncConnection().zrangebyscoreWithScores(key, min, max, limit.getOffset(), limit.getCount()),
-							LettuceConverters.scoredValuesToTupleSet()));
+					pipeline(new LettuceResult(getAsyncConnection().zrangebyscoreWithScores(key, LettuceConverters.toRange(range),
+							LettuceConverters.toLimit(limit)), LettuceConverters.scoredValuesToTupleSet()));
 				} else {
-					pipeline(new LettuceResult(getAsyncConnection().zrangebyscoreWithScores(key, min, max),
-							LettuceConverters.scoredValuesToTupleSet()));
+					pipeline(
+							new LettuceResult(getAsyncConnection().zrangebyscoreWithScores(key, LettuceConverters.toRange(range)),
+									LettuceConverters.scoredValuesToTupleSet()));
 				}
 				return null;
 			}
 			if (isQueueing()) {
 				if (limit != null) {
-					transaction(new LettuceTxResult(
-							getConnection().zrangebyscoreWithScores(key, min, max, limit.getOffset(), limit.getCount()),
-							LettuceConverters.scoredValuesToTupleSet()));
+					transaction(new LettuceTxResult(getConnection().zrangebyscoreWithScores(key, LettuceConverters.toRange(range),
+							LettuceConverters.toLimit(limit)), LettuceConverters.scoredValuesToTupleSet()));
 				} else {
-					transaction(new LettuceTxResult(getConnection().zrangebyscoreWithScores(key, min, max),
-							LettuceConverters.scoredValuesToTupleSet()));
+					transaction(
+							new LettuceTxResult(getConnection().zrangebyscoreWithScores(key, LettuceConverters.toRange(range)),
+									LettuceConverters.scoredValuesToTupleSet()));
 				}
 				return null;
 			}
 			if (limit != null) {
-				return LettuceConverters
-						.toTupleSet(getConnection().zrangebyscoreWithScores(key, min, max, limit.getOffset(), limit.getCount()));
+				return LettuceConverters.toTupleSet(getConnection().zrangebyscoreWithScores(key,
+						LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)));
 			}
-			return LettuceConverters.toTupleSet(getConnection().zrangebyscoreWithScores(key, min, max));
+			return LettuceConverters
+					.toTupleSet(getConnection().zrangebyscoreWithScores(key, LettuceConverters.toRange(range)));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2484,37 +2476,33 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZREVRANGEBYSCORE must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
 				if (limit != null) {
-					pipeline(new LettuceResult(
-							getAsyncConnection().zrevrangebyscore(key, max, min, limit.getOffset(), limit.getCount()),
-							LettuceConverters.bytesListToBytesSet()));
+					pipeline(new LettuceResult(getAsyncConnection().zrevrangebyscore(key, LettuceConverters.toRange(range),
+							LettuceConverters.toLimit(limit)), LettuceConverters.bytesListToBytesSet()));
 				} else {
-					pipeline(new LettuceResult(getAsyncConnection().zrevrangebyscore(key, max, min),
+					pipeline(new LettuceResult(getAsyncConnection().zrevrangebyscore(key, LettuceConverters.toRange(range)),
 							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 			if (isQueueing()) {
 				if (limit != null) {
-					transaction(
-							new LettuceTxResult(getConnection().zrevrangebyscore(key, max, min, limit.getOffset(), limit.getCount()),
-									LettuceConverters.bytesListToBytesSet()));
+					transaction(new LettuceTxResult(
+							getConnection().zrevrangebyscore(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)),
+							LettuceConverters.bytesListToBytesSet()));
 				} else {
-					transaction(new LettuceTxResult(getConnection().zrevrangebyscore(key, max, min),
+					transaction(new LettuceTxResult(getConnection().zrevrangebyscore(key, LettuceConverters.toRange(range)),
 							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 			if (limit != null) {
-				return LettuceConverters
-						.toBytesSet(getConnection().zrevrangebyscore(key, max, min, limit.getOffset(), limit.getCount()));
+				return LettuceConverters.toBytesSet(
+						getConnection().zrevrangebyscore(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)));
 			}
-			return LettuceConverters.toBytesSet(getConnection().zrevrangebyscore(key, max, min));
+			return LettuceConverters.toBytesSet(getConnection().zrevrangebyscore(key, LettuceConverters.toRange(range)));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2542,37 +2530,37 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZREVRANGEBYSCOREWITHSCORES must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
 				if (limit != null) {
-					pipeline(new LettuceResult(
-							getAsyncConnection().zrevrangebyscoreWithScores(key, max, min, limit.getOffset(), limit.getCount()),
-							LettuceConverters.scoredValuesToTupleSet()));
+					pipeline(
+							new LettuceResult(getAsyncConnection().zrevrangebyscoreWithScores(key, LettuceConverters.toRange(range),
+									LettuceConverters.toLimit(limit)), LettuceConverters.scoredValuesToTupleSet()));
 				} else {
-					pipeline(new LettuceResult(getAsyncConnection().zrevrangebyscoreWithScores(key, max, min),
-							LettuceConverters.scoredValuesToTupleSet()));
+					pipeline(
+							new LettuceResult(getAsyncConnection().zrevrangebyscoreWithScores(key, LettuceConverters.toRange(range)),
+									LettuceConverters.scoredValuesToTupleSet()));
 				}
 				return null;
 			}
 			if (isQueueing()) {
 				if (limit != null) {
-					transaction(new LettuceTxResult(
-							getConnection().zrevrangebyscoreWithScores(key, max, min, limit.getOffset(), limit.getCount()),
-							LettuceConverters.scoredValuesToTupleSet()));
+					transaction(
+							new LettuceTxResult(getConnection().zrevrangebyscoreWithScores(key, LettuceConverters.toRange(range),
+									LettuceConverters.toLimit(limit)), LettuceConverters.scoredValuesToTupleSet()));
 				} else {
-					transaction(new LettuceTxResult(getConnection().zrevrangebyscoreWithScores(key, max, min),
-							LettuceConverters.scoredValuesToTupleSet()));
+					transaction(
+							new LettuceTxResult(getConnection().zrevrangebyscoreWithScores(key, LettuceConverters.toRange(range)),
+									LettuceConverters.scoredValuesToTupleSet()));
 				}
 				return null;
 			}
 			if (limit != null) {
-				return LettuceConverters
-						.toTupleSet(getConnection().zrevrangebyscoreWithScores(key, max, min, limit.getOffset(), limit.getCount()));
+				return LettuceConverters.toTupleSet(getConnection().zrevrangebyscoreWithScores(key,
+						LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)));
 			}
-			return LettuceConverters.toTupleSet(getConnection().zrevrangebyscoreWithScores(key, max, min));
+			return LettuceConverters
+					.toTupleSet(getConnection().zrevrangebyscoreWithScores(key, LettuceConverters.toRange(range)));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2641,19 +2629,16 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range for ZREMRANGEBYSCORE must not be null!");
 
-		String min = LettuceConverters.boundaryToStringForZRange(range.getMin(), "-inf");
-		String max = LettuceConverters.boundaryToStringForZRange(range.getMax(), "+inf");
-
 		try {
 			if (isPipelined()) {
-				pipeline(new LettuceResult(getAsyncConnection().zremrangebyscore(key, min, max)));
+				pipeline(new LettuceResult(getAsyncConnection().zremrangebyscore(key, LettuceConverters.toRange(range))));
 				return null;
 			}
 			if (isQueueing()) {
-				transaction(new LettuceTxResult(getConnection().zremrangebyscore(key, min, max)));
+				transaction(new LettuceTxResult(getConnection().zremrangebyscore(key, LettuceConverters.toRange(range))));
 				return null;
 			}
-			return getConnection().zremrangebyscore(key, min, max);
+			return getConnection().zremrangebyscore(key, LettuceConverters.toRange(range));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -2917,7 +2902,7 @@ public class LettuceConnection extends AbstractRedisConnection {
 				transaction(new LettuceTxResult(getConnection().hmget(key, fields), LettuceConverters.keyValueListUnwrapper()));
 				return null;
 			}
-			return LettuceConverters.<byte[], byte[]>keyValueListUnwrapper().convert(getConnection().hmget(key, fields));
+			return LettuceConverters.<byte[], byte[]> keyValueListUnwrapper().convert(getConnection().hmget(key, fields));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -3314,7 +3299,8 @@ public class LettuceConnection extends AbstractRedisConnection {
 				transaction(new LettuceTxResult(getConnection().geohash(key, members)));
 				return null;
 			}
-			return getConnection().geohash(key, members).stream().map(value -> value.getValueOrElse(null)).collect(Collectors.toList());
+			return getConnection().geohash(key, members).stream().map(value -> value.getValueOrElse(null))
+					.collect(Collectors.toList());
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
@@ -4055,9 +4041,9 @@ public class LettuceConnection extends AbstractRedisConnection {
 					break;
 			}
 		}
-		long[] lg = new long[weights.length];
+		double[] lg = new double[weights.length];
 		for (int i = 0; i < lg.length; i++) {
-			lg[i] = (long) weights[i];
+			lg[i] = weights[i];
 		}
 		args.weights(lg);
 		return args;
@@ -4474,39 +4460,37 @@ public class LettuceConnection extends AbstractRedisConnection {
 
 		Assert.notNull(range, "Range cannot be null for ZRANGEBYLEX.");
 
-		String min = LettuceConverters.boundaryToBytesForZRangeByLex(range.getMin(), LettuceConverters.MINUS_BYTES);
-		String max = LettuceConverters.boundaryToBytesForZRangeByLex(range.getMax(), LettuceConverters.PLUS_BYTES);
-
 		try {
 			if (isPipelined()) {
 				if (limit != null) {
-					pipeline(
-							new LettuceResult(getAsyncConnection().zrangebylex(key, min, max, limit.getOffset(), limit.getCount()),
-									LettuceConverters.bytesListToBytesSet()));
+					pipeline(new LettuceResult(
+							getAsyncConnection().zrangebylex(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)),
+							LettuceConverters.bytesListToBytesSet()));
 				} else {
-					pipeline(new LettuceResult(getAsyncConnection().zrangebylex(key, min, max),
+					pipeline(new LettuceResult(getAsyncConnection().zrangebylex(key, LettuceConverters.toRange(range)),
 							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 			if (isQueueing()) {
 				if (limit != null) {
-					transaction(
-							new LettuceTxResult(getConnection().zrangebylex(key, min, max, limit.getOffset(), limit.getCount()),
-									LettuceConverters.bytesListToBytesSet()));
+					transaction(new LettuceTxResult(
+							getConnection().zrangebylex(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)),
+							LettuceConverters.bytesListToBytesSet()));
 				} else {
-					transaction(
-							new LettuceTxResult(getConnection().zrangebylex(key, min, max), LettuceConverters.bytesListToBytesSet()));
+					transaction(new LettuceTxResult(getConnection().zrangebylex(key, LettuceConverters.toRange(range)),
+							LettuceConverters.bytesListToBytesSet()));
 				}
 				return null;
 			}
 
 			if (limit != null) {
-				return LettuceConverters.bytesListToBytesSet()
-						.convert(getConnection().zrangebylex(key, min, max, limit.getOffset(), limit.getCount()));
+				return LettuceConverters.bytesListToBytesSet().convert(
+						getConnection().zrangebylex(key, LettuceConverters.toRange(range), LettuceConverters.toLimit(limit)));
 			}
 
-			return LettuceConverters.bytesListToBytesSet().convert(getConnection().zrangebylex(key, min, max));
+			return LettuceConverters.bytesListToBytesSet()
+					.convert(getConnection().zrangebylex(key, LettuceConverters.toRange(range)));
 		} catch (Exception ex) {
 			throw convertLettuceAccessException(ex);
 		}
