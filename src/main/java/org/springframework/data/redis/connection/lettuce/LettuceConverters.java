@@ -105,8 +105,8 @@ abstract public class LettuceConverters extends Converters {
 	private static final Converter<List<byte[]>, Long> BYTES_LIST_TO_TIME_CONVERTER;
 	private static final Converter<GeoCoordinates, Point> GEO_COORDINATE_TO_POINT_CONVERTER;
 	private static final ListConverter<GeoCoordinates, Point> GEO_COORDINATE_LIST_TO_POINT_LIST_CONVERTER;
-	private static final Converter<Value<Object>, Object> VALUE_UNWRAPPER;
-	private static final ListConverter<Value<Object>, Object> VALUE_LIST_UNWRAPPER;
+	private static final Converter<KeyValue<Object, Object>, Object> KEY_VALUE_UNWRAPPER;
+	private static final ListConverter<KeyValue<Object, Object>, Object> KEY_VALUE_LIST_UNWRAPPER;
 	private static final Converter<TransactionResult, List<Object>> TRANSACTION_RESULT_UNWRAPPER;
 
 	public static final byte[] PLUS_BYTES;
@@ -332,15 +332,15 @@ abstract public class LettuceConverters extends Converters {
 		GEO_COORDINATE_LIST_TO_POINT_LIST_CONVERTER = new ListConverter<GeoCoordinates, Point>(
 				GEO_COORDINATE_TO_POINT_CONVERTER);
 
-		VALUE_UNWRAPPER = new Converter<Value<Object>, Object>() {
+		KEY_VALUE_UNWRAPPER = new Converter<KeyValue<Object, Object>, Object>() {
 
 			@Override
-			public Object convert(Value<Object> source) {
+			public Object convert(KeyValue<Object, Object> source) {
 				return source.getValueOrElse(null);
 			}
 		};
 
-		VALUE_LIST_UNWRAPPER = new ListConverter<>(VALUE_UNWRAPPER);
+		KEY_VALUE_LIST_UNWRAPPER = new ListConverter<>(KEY_VALUE_UNWRAPPER);
 
 		TRANSACTION_RESULT_UNWRAPPER = new Converter<TransactionResult, List<Object>>() {
 
@@ -561,7 +561,7 @@ abstract public class LettuceConverters extends Converters {
 	 * @return a lettuce {@link com.lambdaworks.redis.Limit}.
 	 * @since 2.0
 	 */
-	public static com.lambdaworks.redis.Limit toLettuceLimit(RedisZSetCommands.Limit limit){
+	public static com.lambdaworks.redis.Limit toLimit(RedisZSetCommands.Limit limit){
 		return Limit.create(limit.getOffset(), limit.getCount());
 	}
 
@@ -848,24 +848,9 @@ abstract public class LettuceConverters extends Converters {
 	 * @return
 	 * @since 2.0
 	 */
-	public static <T, V extends Value<T>> Converter<V, T> valueUnwrapper() {
-		return (Converter) VALUE_UNWRAPPER;
-	}
-
-	/**
-	 * @return
-	 * @since 2.0
-	 */
-	public static <T> ListConverter<? extends Value<T>, T> valueListUnwrapper() {
-		return (ListConverter) VALUE_LIST_UNWRAPPER;
-	}
-
-	/**
-	 * @return
-	 * @since 2.0
-	 */
+	@SuppressWarnings("unchecked")
 	public static <K, V> ListConverter<KeyValue<K, V>, V> keyValueListUnwrapper() {
-		return (ListConverter) VALUE_LIST_UNWRAPPER;
+		return (ListConverter) KEY_VALUE_LIST_UNWRAPPER;
 	}
 
 	public static Converter<TransactionResult, List<Object>> transactionResultUnwrapper() {

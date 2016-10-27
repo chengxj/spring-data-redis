@@ -238,7 +238,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
 				
-				Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+				Range<Number> range = ArgumentConverters.toRange(command.getRange());
 				
 				if (command.getWithScores().isPresent()
 						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
@@ -249,7 +249,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 					} else {
 						result = cmd
 								.zrangebyscoreWithScores(command.getKey(), range,
-										LettuceConverters.toLettuceLimit(command.getLimit().get()))
+										LettuceConverters.toLimit(command.getLimit().get()))
 								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
@@ -260,13 +260,13 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 					} else {
 
 						result = cmd
-								.zrangebyscore(command.getKey(), range, LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.zrangebyscore(command.getKey(), range, LettuceConverters.toLimit(command.getLimit().get()))
 								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
 			} else {
 				
-				Range<Number> range = ArgumentConverters.revRangeFrom(command.getRange());
+				Range<Number> range = ArgumentConverters.toRevRange(command.getRange());
 				
 				if (command.getWithScores().isPresent()
 						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
@@ -278,7 +278,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 						result = cmd
 								.zrevrangebyscoreWithScores(command.getKey(), range,
-										LettuceConverters.toLettuceLimit(command.getLimit().get()))
+										LettuceConverters.toLimit(command.getLimit().get()))
 								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
@@ -289,7 +289,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 					} else {
 
 						result = cmd
-								.zrevrangebyscore(command.getKey(), range, LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.zrevrangebyscore(command.getKey(), range, LettuceConverters.toLimit(command.getLimit().get()))
 								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
@@ -311,7 +311,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+			Range<Number> range = ArgumentConverters.toRange(command.getRange());
 			Mono<Long> result = cmd.zcount(command.getKey(), range);
 
 			return result.map(value -> new NumericResponse<>(command, value));
@@ -381,7 +381,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+			Range<Number> range = ArgumentConverters.toRange(command.getRange());
 			Mono<Long> result = cmd.zremrangebyscore(command.getKey(), range);
 
 			return result.map(value -> new NumericResponse<>(command, value));
@@ -455,15 +455,15 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			if (command.getLimit() != null) {
 
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.rangeFrom(command.getRange()), LettuceConverters.toLettuceLimit(command.getLimit()));
+					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.toRange(command.getRange()), LettuceConverters.toLimit(command.getLimit()));
 				} else {
-					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.revRangeFrom(command.getRange()), LettuceConverters.toLettuceLimit(command.getLimit()));
+					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.toRevRange(command.getRange()), LettuceConverters.toLimit(command.getLimit()));
 				}
 			} else {
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.rangeFrom(command.getRange()));
+					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.toRange(command.getRange()));
 				} else {
-					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.revRangeFrom(command.getRange()));
+					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.toRevRange(command.getRange()));
 				}
 			}
 
@@ -519,23 +519,25 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 	 */
 	static class ArgumentConverters {
 
-		public static <T> Range<T> rangeFrom(org.springframework.data.domain.Range<?> range) {
+		public static <T> Range<T> toRange(org.springframework.data.domain.Range<?> range) {
 			return Range.from(lowerBoundArgOf(range), upperBoundArgOf(range));
 		}
 		
-		public static <T> Range<T> revRangeFrom(org.springframework.data.domain.Range<?> range) {
+		public static <T> Range<T> toRevRange(org.springframework.data.domain.Range<?> range) {
 			return Range.from(upperBoundArgOf(range), lowerBoundArgOf(range));
 		}
 
+		@SuppressWarnings("unchecked")
 		public static <T> Boundary<T> lowerBoundArgOf(org.springframework.data.domain.Range<?> range) {
 			return (Boundary<T>) rangeToBoundArgumentConverter(false).convert(range);
 		}
 
+		@SuppressWarnings("unchecked")
 		public static <T> Boundary<T> upperBoundArgOf(org.springframework.data.domain.Range<?> range) {
 			return (Boundary<T>) rangeToBoundArgumentConverter(true).convert(range);
 		}
 
-		public static Converter<org.springframework.data.domain.Range<?>, Boundary<?>> rangeToBoundArgumentConverter(
+		private static Converter<org.springframework.data.domain.Range<?>, Boundary<?>> rangeToBoundArgumentConverter(
 				Boolean upper) {
 
 			return (source) -> {
