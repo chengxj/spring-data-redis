@@ -53,6 +53,7 @@ import org.springframework.data.redis.connection.RedisNode.NodeType;
 import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.RedisServer;
 import org.springframework.data.redis.connection.RedisStringCommands.SetOption;
+import org.springframework.data.redis.connection.RedisZSetCommands;
 import org.springframework.data.redis.connection.RedisZSetCommands.Range.Boundary;
 import org.springframework.data.redis.connection.RedisZSetCommands.Tuple;
 import org.springframework.data.redis.connection.ReturnType;
@@ -552,6 +553,16 @@ abstract public class LettuceConverters extends Converters {
 		}
 
 		return prefix + value;
+	}
+
+	/**
+	 * Convert a {@link org.springframework.data.redis.connection.RedisZSetCommands.Limit} to a lettuce {@link com.lambdaworks.redis.Limit}.
+	 * @param limit
+	 * @return a lettuce {@link com.lambdaworks.redis.Limit}.
+	 * @since 2.0
+	 */
+	public static com.lambdaworks.redis.Limit toLettuceLimit(RedisZSetCommands.Limit limit){
+		return Limit.create(limit.getOffset(), limit.getCount());
 	}
 
 	/**

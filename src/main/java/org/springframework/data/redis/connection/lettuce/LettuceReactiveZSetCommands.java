@@ -19,6 +19,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 import org.reactivestreams.Publisher;
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.domain.Sort.Direction;
 import org.springframework.data.redis.connection.DefaultTuple;
 import org.springframework.data.redis.connection.ReactiveRedisConnection.KeyCommand;
@@ -27,12 +28,18 @@ import org.springframework.data.redis.connection.ReactiveRedisConnection.Numeric
 import org.springframework.data.redis.connection.ReactiveZSetCommands;
 import org.springframework.data.redis.connection.RedisZSetCommands.Aggregate;
 import org.springframework.data.redis.connection.RedisZSetCommands.Tuple;
+import org.springframework.data.util.DirectFieldAccessFallbackBeanWrapper;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
+import org.springframework.util.StringUtils;
 
+import com.lambdaworks.redis.Range;
+import com.lambdaworks.redis.Range.Boundary;
 import com.lambdaworks.redis.ScoredValue;
 import com.lambdaworks.redis.ZAddArgs;
 import com.lambdaworks.redis.ZStoreArgs;
+import com.lambdaworks.redis.codec.StringCodec;
+import com.lambdaworks.redis.protocol.LettuceCharsets;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -196,6 +203,7 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			} else {
 				if (command.getWithScores().isPresent()
 						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
+
 					result = cmd
 							.zrevrangeWithScores(command.getKey(), command.getRange().getLowerBound(),
 									command.getRange().getUpperBound())
@@ -224,82 +232,65 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Object lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange());
-			Object upperBound = AgrumentConverters.upperBoundArgOf(command.getRange());
-
-			boolean requiresStringConversion = lowerBound instanceof String || upperBound instanceof String;
-
 			boolean isLimited = command.getLimit().isPresent();
 
 			Mono<List<Tuple>> result;
 
 			if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
+				
+				Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+				
 				if (command.getWithScores().isPresent()
 						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
 
 					if (!isLimited) {
-						result = (requiresStringConversion
-								? cmd.zrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound))
-										.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
+						result = cmd.zrangebyscoreWithScores(command.getKey(), range)
+								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					} else {
-						result = (requiresStringConversion
-								? cmd.zrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString(),
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound,
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
+						result = cmd
+								.zrangebyscoreWithScores(command.getKey(), range,
+										LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
 
 					if (!isLimited) {
-						result = (requiresStringConversion
-								? cmd.zrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound))
-										.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
+						result = cmd.zrangebyscore(command.getKey(), range)
+								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					} else {
 
-						result = (requiresStringConversion
-								? cmd.zrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString(),
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound,
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
+						result = cmd
+								.zrangebyscore(command.getKey(), range, LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
 			} else {
+				
+				Range<Number> range = ArgumentConverters.revRangeFrom(command.getRange());
+				
 				if (command.getWithScores().isPresent()
 						&& ObjectUtils.nullSafeEquals(command.getWithScores().get(), Boolean.TRUE)) {
 
 					if (!isLimited) {
-						result = (requiresStringConversion
-								? cmd.zrevrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrevrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound))
-										.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
+						result = cmd.zrevrangebyscoreWithScores(command.getKey(), range)
+								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					} else {
 
-						result = (requiresStringConversion
-								? cmd.zrevrangebyscoreWithScores(command.getKey(), lowerBound.toString(), upperBound.toString(),
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrevrangebyscoreWithScores(command.getKey(), (Double) lowerBound, (Double) upperBound,
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
+						result = cmd
+								.zrevrangebyscoreWithScores(command.getKey(), range,
+										LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.map(sc -> (Tuple) new DefaultTuple(getBytes(sc.getValue()), sc.getScore())).collectList();
 					}
 				} else {
 
 					if (!isLimited) {
-						result = (requiresStringConversion
-								? cmd.zrevrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
-								: cmd.zrevrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound))
-										.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
+						result = cmd.zrevrangebyscore(command.getKey(), range)
+								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					} else {
 
-						result = (requiresStringConversion
-								? cmd.zrevrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString(),
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount())
-								: cmd.zrevrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound,
-										command.getLimit().get().getOffset(), command.getLimit().get().getCount()))
-												.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
+						result = cmd
+								.zrevrangebyscore(command.getKey(), range, LettuceConverters.toLettuceLimit(command.getLimit().get()))
+								.map(value -> (Tuple) new DefaultTuple(getBytes(value), Double.NaN)).collectList();
 					}
 				}
 			}
@@ -320,16 +311,8 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Object lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange());
-			Object upperBound = AgrumentConverters.upperBoundArgOf(command.getRange());
-
-			Mono<Long> result;
-
-			if (lowerBound instanceof String || upperBound instanceof String) {
-				result = cmd.zcount(command.getKey(), lowerBound.toString(), upperBound.toString());
-			} else {
-				result = cmd.zcount(command.getKey(), (Double) lowerBound, (Double) upperBound);
-			}
+			Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+			Mono<Long> result = cmd.zcount(command.getKey(), range);
 
 			return result.map(value -> new NumericResponse<>(command, value));
 		}));
@@ -398,12 +381,8 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			Assert.notNull(command.getKey(), "Key must not be null!");
 			Assert.notNull(command.getRange(), "Range must not be null!");
 
-			Object lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange());
-			Object upperBound = AgrumentConverters.upperBoundArgOf(command.getRange());
-
-			Mono<Long> result = (lowerBound instanceof String || upperBound instanceof String)
-					? cmd.zremrangebyscore(command.getKey(), lowerBound.toString(), upperBound.toString())
-					: cmd.zremrangebyscore(command.getKey(), (Double) lowerBound, (Double) upperBound);
+			Range<Number> range = ArgumentConverters.rangeFrom(command.getRange());
+			Mono<Long> result = cmd.zremrangebyscore(command.getKey(), range);
 
 			return result.map(value -> new NumericResponse<>(command, value));
 		}));
@@ -472,26 +451,19 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 			Flux<ByteBuffer> result;
 
-			String lowerBound = AgrumentConverters.lowerBoundArgOf(command.getRange()).toString();
-			String upperBound = AgrumentConverters.upperBoundArgOf(command.getRange()).toString();
 
 			if (command.getLimit() != null) {
 
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey(), lowerBound, upperBound, command.getLimit().getOffset(),
-							command.getLimit().getCount());
+					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.rangeFrom(command.getRange()), LettuceConverters.toLettuceLimit(command.getLimit()));
 				} else {
-
-					// TODO: fix when https://github.com/mp911de/lettuce/issues/369 resolved
-					throw new UnsupportedOperationException("Lettuce does not support ZREVRANGEBYLEX.");
+					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.revRangeFrom(command.getRange()), LettuceConverters.toLettuceLimit(command.getLimit()));
 				}
 			} else {
 				if (ObjectUtils.nullSafeEquals(command.getDirection(), Direction.ASC)) {
-					result = cmd.zrangebylex(command.getKey(), lowerBound, upperBound);
+					result = cmd.zrangebylex(command.getKey(), ArgumentConverters.rangeFrom(command.getRange()));
 				} else {
-
-					// TODO: fix when https://github.com/mp911de/lettuce/issues/369 resolved
-					throw new UnsupportedOperationException("Lettuce does not support ZREVRANGEBYLEX.");
+					result = cmd.zrevrangebylex(command.getKey(), ArgumentConverters.revRangeFrom(command.getRange()));
 				}
 			}
 
@@ -516,9 +488,8 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 			}
 		}
 
-		// TODO: fix when https://github.com/mp911de/lettuce/issues/368 resolved
 		if (weights != null) {
-			long[] lg = new long[weights.size()];
+			double[] lg = new double[weights.size()];
 			for (int i = 0; i < lg.length; i++) {
 				lg[i] = weights.get(i).longValue();
 			}
@@ -540,5 +511,59 @@ public class LettuceReactiveZSetCommands implements ReactiveZSetCommands {
 
 	protected LettuceReactiveRedisConnection getConnection() {
 		return connection;
+	}
+
+	/**
+	 * @author Christoph Strobl
+	 * @author Mark Paluch
+	 */
+	static class ArgumentConverters {
+
+		public static <T> Range<T> rangeFrom(org.springframework.data.domain.Range<?> range) {
+			return Range.from(lowerBoundArgOf(range), upperBoundArgOf(range));
+		}
+		
+		public static <T> Range<T> revRangeFrom(org.springframework.data.domain.Range<?> range) {
+			return Range.from(upperBoundArgOf(range), lowerBoundArgOf(range));
+		}
+
+		public static <T> Boundary<T> lowerBoundArgOf(org.springframework.data.domain.Range<?> range) {
+			return (Boundary<T>) rangeToBoundArgumentConverter(false).convert(range);
+		}
+
+		public static <T> Boundary<T> upperBoundArgOf(org.springframework.data.domain.Range<?> range) {
+			return (Boundary<T>) rangeToBoundArgumentConverter(true).convert(range);
+		}
+
+		public static Converter<org.springframework.data.domain.Range<?>, Boundary<?>> rangeToBoundArgumentConverter(
+				Boolean upper) {
+
+			return (source) -> {
+
+				// TODO: fix range exclusion pattern when DATACMNS-920 is resolved
+				DirectFieldAccessFallbackBeanWrapper bw = new DirectFieldAccessFallbackBeanWrapper(source);
+
+				Boolean inclusive = upper ? Boolean.valueOf(bw.getPropertyValue("upperInclusive").toString())
+						: Boolean.valueOf(bw.getPropertyValue("lowerInclusive").toString());
+				Object value = upper ? source.getUpperBound() : source.getLowerBound();
+
+				if (value instanceof Number) {
+					return inclusive ? Boundary.including((Number) value) : Boundary.excluding((Number) value);
+				}
+
+				if (value instanceof String) {
+
+					StringCodec stringCodec = new StringCodec(LettuceCharsets.UTF8);
+					if (!StringUtils.hasText((String) value) || ObjectUtils.nullSafeEquals(value, "+")
+							|| ObjectUtils.nullSafeEquals(value, "-")) {
+						return Boundary.unbounded();
+					}
+					return inclusive ? Boundary.including(stringCodec.encodeValue((String) value))
+							: Boundary.excluding(stringCodec.encodeValue((String) value));
+				}
+
+				return inclusive ? Boundary.including((ByteBuffer) value) : Boundary.excluding((ByteBuffer) value);
+			};
+		}
 	}
 }
